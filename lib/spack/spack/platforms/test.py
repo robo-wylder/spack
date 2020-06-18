@@ -10,8 +10,8 @@ from spack.architecture import OperatingSystem
 class Test(Platform):
     priority    = 1000000
     front_end   = 'x86_64'
-    back_end    = 'core2'
-    default     = 'core2'
+    back_end    = 'broadwell'
+    default     = 'broadwell'
 
     front_os = 'redhat6'
     back_os = 'debian6'
