@@ -1599,7 +1599,7 @@ class PackageBase(with_metaclass(PackageMeta, PackageViewMixin, object)):
                 string is a regex expected to match part of the output.
             status (int, list of int, or None): possible passing status values
                 with 0 and None meaning the test is expected to succeed
-            installed (bool): the executable must be in the install prefix
+            installed (bool): only use the executable in the install prefix
             purpose (str): message to display before running test
             skip_missing (bool): skip the test if the executable is not
                 in the install prefix bin directory or the provided work_dir
@@ -1610,6 +1610,10 @@ class PackageBase(with_metaclass(PackageMeta, PackageViewMixin, object)):
             try:
                 runner = which(exe)
                 if runner is None and skip_missing:
+                    return
+
+                if skip_missing and installed and \
+                        self.spec.prefix not in runner.path:
                     return
 
                 self._run_test_helper(
