@@ -3,6 +3,7 @@
 #
 # SPDX-License-Identifier: (Apache-2.0 OR MIT)
 import os
+import shutil
 
 import pytest
 
@@ -14,7 +15,7 @@ compiler = spack.main.SpackCommand('compiler')
 
 
 @pytest.fixture
-def no_compilers_yaml(mutable_config, monkeypatch):
+def no_compilers_yaml(mutable_config):
     """Creates a temporary configuration without compilers.yaml"""
 
     for scope, local_config in mutable_config.scopes.items():
@@ -103,3 +104,92 @@ def test_compiler_add(
     new_compiler = new_compilers - old_compilers
     assert any(c.version == spack.version.Version(mock_compiler_version)
                for c in new_compiler)
+
+
+@pytest.fixture
+def clangdir(tmpdir):
+    """Create a directory with some dummy compiler scripts in it.
+
+    Scripts are:
+      - clang
+      - clang++
+      - gfortran-8
+
+    """
+    with tmpdir.as_cwd():
+        with open('clang', 'w') as f:
+            f.write("""\
+#!/bin/sh
+if [ "$1" = "--version" ]; then
+    echo "Apple clang version 11.0.0 (clang-1100.0.33.16)"
+    echo "Target: x86_64-apple-darwin18.7.0"
+    echo "Thread model: posix"
+    echo "InstalledDir: /dummy"
+else
+    echo "clang: error: no input files"
+fi
+""")
+        shutil.copy('clang', 'clang++')
+
+        with open('gfortran-8', 'w') as f:
+            f.write("""\
+#!/bin/sh
+if [ "$1" = "--version" ]; then
+    echo "GNU Fortran (GCC) 8.4.0 20120313 (Red Hat 8.4.0-1)"
+    echo "Copyright (C) 2010 Free Software Foundation, Inc.
+else
+    echo "gfortran-8: fatal error: no input files"
+    echo "compilation terminated."
+fi
+""")
+        os.chmod('clang', 0o700)
+        os.chmod('clang++', 0o700)
+        os.chmod('gfortran-8', 0o700)
+
+    yield tmpdir
+
+
+@pytest.mark.regression('17590')
+def test_compiler_find_mixed_suffixes(
+        no_compilers_yaml, working_env, clangdir):
+    """Ensure that we'll mix compilers with different suffixes when necessary.
+    """
+    os.environ['PATH'] = str(clangdir)
+    output = compiler('find', '--scope=site')
+
+    assert 'clang' in output
+
+    config = spack.compilers.get_compiler_config('site', False)
+
+    new = config[-1]['compiler']
+    assert new['spec'] == "apple-clang@11.0.0"
+    assert new['paths'] == {
+        'cc': str(clangdir.join('clang')),
+        'cxx': str(clangdir.join('clang++')),
+        'f77': str(clangdir.join('gfortran-8')),
+        'fc': str(clangdir.join('gfortran-8')),
+    }
+
+
+@pytest.mark.regression('17590')
+def test_compiler_find_prefer_no_suffix(
+        no_compilers_yaml, working_env, clangdir):
+    """Ensure that we'll pick 'clang' over 'clang-gpu' when there is a choice.
+    """
+    with clangdir.as_cwd():
+        shutil.copy('clang', 'clang-gpu')
+        shutil.copy('clang++', 'clang++-gpu')
+        os.chmod('clang-gpu', 0o700)
+        os.chmod('clang++-gpu', 0o700)
+
+    os.environ['PATH'] = str(clangdir)
+    output = compiler('find', '--scope=site')
+
+    assert 'clang' in output
+
+    config = spack.compilers.get_compiler_config('site', False)
+
+    new = config[-1]['compiler']
+    assert new['spec'] == "apple-clang@11.0.0"
+    assert new['paths']['cc'] == str(clangdir.join('clang'))
+    assert new['paths']['cxx'] == str(clangdir.join('clang++'))
