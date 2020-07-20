@@ -562,6 +562,8 @@ class Trilinos(CMakePackage):
                 define('HDF5_INCLUDE_DIRS', spec['hdf5'].prefix.include),
                 define('HDF5_LIBRARY_DIRS', spec['hdf5'].prefix.lib),
             ])
+            if '^hdf5~mpi' in spec:
+                options.append(define('EpetraExt_ENABLE_HDF5', False))
 
         if '+suite-sparse' in spec:
             options.extend([
